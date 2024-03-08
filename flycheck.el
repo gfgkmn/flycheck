@@ -240,6 +240,7 @@ attention to case differences."
     puppet-parser
     puppet-lint
     python-flake8
+    python-ruff
     python-pylint
     python-pycompile
     python-pyright
@@ -10628,7 +10629,7 @@ Requires Flake8 3.0 or newer. See URL
                  (flycheck-python-find-module 'python-flake8 "flake8")))
   :verify (lambda (_) (flycheck-python-verify-module 'python-flake8 "flake8"))
   :modes python-mode
-  :next-checkers ((warning . python-pylint)
+  :next-checkers ((warning . python-ruff)
                   (warning . python-mypy)))
 
 (flycheck-def-config-file-var
@@ -10667,6 +10668,38 @@ which should be used and reported to the user."
                :buffer buffer
                :filename .path)))
           (car (flycheck-parse-json output))))
+
+
+(flycheck-define-checker python-ruff
+  "A Python syntax and style checker using the ruff utility.
+To override the path to the ruff executable, set
+`flycheck-python-ruff-executable'.
+See URL `http://pypi.python.org/pypi/ruff'."
+  :command ("ruff"
+            "check"
+            "-q"
+            (eval (when (flycheck-buffer-file-local-name)
+                    (concat "--stdin-filename=" (flycheck-buffer-file-local-name))))
+            "-")
+  :standard-input t
+  :error-filter (lambda (errors)
+                  (let ((errors (flycheck-sanitize-errors errors)))
+                    (seq-map #'flycheck-flake8-fix-error-level errors)))
+
+
+  :error-parser flycheck-parse-with-patterns-without-color
+  :error-patterns
+  ((warning line-start
+            (file-name) ":" line ":" (optional column ":") " "
+            (id (one-or-more (any alpha)) (one-or-more digit)) " "
+            (message (one-or-more not-newline))
+            line-end))
+  :enabled (lambda ()
+             (or (not (flycheck-python-needs-module-p 'python-ruff))
+                 (flycheck-python-find-module 'python-ruff "ruff")))
+  :verify (lambda (_) (flycheck-python-verify-module 'python-ruff "ruff"))
+  :modes python-mode
+  :next-checkers ((warning . python-pylint)))
 
 (flycheck-define-checker python-pylint
   "A Python syntax and style checker using Pylint.
