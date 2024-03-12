@@ -10675,13 +10675,16 @@ which should be used and reported to the user."
 To override the path to the ruff executable, set
 `flycheck-python-ruff-executable'.
 See URL `http://pypi.python.org/pypi/ruff'."
-  :command ("ruff"
+  :command ("python3"
+            "-m"
+            "ruff"
             "check"
             "-q"
             (eval (when (flycheck-buffer-file-local-name)
                     (concat "--stdin-filename=" (flycheck-buffer-file-local-name))))
             "-")
   :standard-input t
+  :working-directory flycheck-python-find-project-root
   :error-filter (lambda (errors)
                   (let ((errors (flycheck-sanitize-errors errors)))
                     (seq-map #'flycheck-flake8-fix-error-level errors)))
