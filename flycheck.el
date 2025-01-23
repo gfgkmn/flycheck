@@ -10675,9 +10675,7 @@ which should be used and reported to the user."
 To override the path to the ruff executable, set
 `flycheck-python-ruff-executable'.
 See URL `http://pypi.python.org/pypi/ruff'."
-  :command ("env"
-            "NO_COLOR=1"
-            "python3"
+  :command ("python3"
             "-m"
             "ruff"
             "check"
