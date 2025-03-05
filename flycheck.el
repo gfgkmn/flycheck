@@ -243,6 +243,7 @@ attention to case differences."
     puppet-parser
     puppet-lint
     python-flake8
+    python-ruff
     python-pylint
     python-pycompile
     python-pyright
@@ -6598,40 +6599,44 @@ configuration file was found."
 
 (defun flycheck-locate-config-file-by-path (filepath _checker)
   "Locate a configuration file by a FILEPATH.
-
 If FILEPATH is a contains a path separator, expand it against the
 default directory and return it if it points to an existing file.
 Otherwise return nil.
-
 _CHECKER is ignored."
   ;; If the path is just a plain file name, skip it.
   (unless (string= (file-name-nondirectory filepath) filepath)
     (let ((file-name (expand-file-name filepath)))
-      (and (file-exists-p file-name) file-name))))
+      (and (file-exists-p file-name)
+           (if (file-remote-p file-name)
+               (file-remote-p file-name 'localname)
+             file-name)))))
 
 (defun flycheck-locate-config-file-ancestor-directories (filename _checker)
   "Locate a configuration FILENAME in ancestor directories.
-
 If the current buffer has a file name, search FILENAME in the
 directory of the current buffer and all ancestors thereof (see
 `locate-dominating-file').  If the file is found, return its
 absolute path.  Otherwise return nil.
-
 _CHECKER is ignored."
   (-when-let* ((basefile (buffer-file-name))
                (directory (locate-dominating-file basefile filename)))
-    (expand-file-name filename directory)))
+    (let ((full-path (expand-file-name filename directory)))
+      (if (file-remote-p full-path)
+          (file-remote-p full-path 'localname)
+        full-path))))
 
 (defun flycheck-locate-config-file-home (filename _checker)
   "Locate a configuration FILENAME in the home directory.
-
 Return the absolute path, if FILENAME exists in the user's home
 directory, or nil otherwise."
-  (let* ((home (or (and (buffer-file-name) (file-remote-p (buffer-file-name)))
+  (let* ((home (or (and (buffer-file-name)
+                        (file-remote-p (buffer-file-name)))
                    "~"))
          (path (expand-file-name filename home)))
     (when (file-exists-p path)
-      path)))
+      (if (file-remote-p path)
+          (file-remote-p path 'localname)
+        path))))
 
 (seq-do (apply-partially #'custom-add-frequent-value
                          'flycheck-locate-config-file-functions)
@@ -10723,6 +10728,7 @@ Requires Flake8 3.0 or newer. See URL
             (eval (when (flycheck-buffer-file-local-name)
                     (concat "--stdin-display-name=" (flycheck-buffer-file-local-name))))
             "-")
+
   :standard-input t
   :working-directory flycheck-python-find-project-root
   :error-filter (lambda (errors)
@@ -10740,7 +10746,7 @@ Requires Flake8 3.0 or newer. See URL
                  (flycheck-python-find-module 'python-flake8 "flake8")))
   :verify (lambda (_) (flycheck-python-verify-module 'python-flake8 "flake8"))
   :modes (python-mode python-ts-mode)
-  :next-checkers ((warning . python-pylint)
+  :next-checkers ((warning . python-ruff)
                   (warning . python-mypy)))
 
 (flycheck-def-config-file-var
@@ -10779,6 +10785,41 @@ which should be used and reported to the user."
                :buffer buffer
                :filename .path)))
           (car (flycheck-parse-json output))))
+
+
+(flycheck-define-checker python-ruff
+  "A Python syntax and style checker using the ruff utility.
+To override the path to the ruff executable, set
+`flycheck-python-ruff-executable'.
+See URL `http://pypi.python.org/pypi/ruff'."
+  :command ("python3"
+            "-m"
+            "ruff"
+            "check"
+            "-q"
+            (eval (when (flycheck-buffer-file-local-name)
+                    (concat "--stdin-filename=" (flycheck-buffer-file-local-name))))
+            "-")
+  :standard-input t
+  :working-directory flycheck-python-find-project-root
+  :error-filter (lambda (errors)
+                  (let ((errors (flycheck-sanitize-errors errors)))
+                    (seq-map #'flycheck-flake8-fix-error-level errors)))
+
+
+  :error-parser flycheck-parse-with-patterns-without-color
+  :error-patterns
+  ((warning line-start
+            (file-name) ":" line ":" (optional column ":") " "
+            (id (one-or-more (any alpha)) (one-or-more digit)) " "
+            (message (one-or-more not-newline))
+            line-end))
+  :enabled (lambda ()
+             (or (not (flycheck-python-needs-module-p 'python-ruff))
+                 (flycheck-python-find-module 'python-ruff "ruff")))
+  :verify (lambda (_) (flycheck-python-verify-module 'python-ruff "ruff"))
+  :modes python-mode
+  :next-checkers ((warning . python-pylint)))
 
 (flycheck-define-checker python-pylint
   "A Python syntax and style checker using Pylint.
