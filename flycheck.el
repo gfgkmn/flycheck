@@ -6551,40 +6551,44 @@ configuration file was found."
 
 (defun flycheck-locate-config-file-by-path (filepath _checker)
   "Locate a configuration file by a FILEPATH.
-
 If FILEPATH is a contains a path separator, expand it against the
 default directory and return it if it points to an existing file.
 Otherwise return nil.
-
 _CHECKER is ignored."
   ;; If the path is just a plain file name, skip it.
   (unless (string= (file-name-nondirectory filepath) filepath)
     (let ((file-name (expand-file-name filepath)))
-      (and (file-exists-p file-name) file-name))))
+      (and (file-exists-p file-name)
+           (if (file-remote-p file-name)
+               (file-remote-p file-name 'localname)
+             file-name)))))
 
 (defun flycheck-locate-config-file-ancestor-directories (filename _checker)
   "Locate a configuration FILENAME in ancestor directories.
-
 If the current buffer has a file name, search FILENAME in the
 directory of the current buffer and all ancestors thereof (see
 `locate-dominating-file').  If the file is found, return its
 absolute path.  Otherwise return nil.
-
 _CHECKER is ignored."
   (-when-let* ((basefile (buffer-file-name))
                (directory (locate-dominating-file basefile filename)))
-    (expand-file-name filename directory)))
+    (let ((full-path (expand-file-name filename directory)))
+      (if (file-remote-p full-path)
+          (file-remote-p full-path 'localname)
+        full-path))))
 
 (defun flycheck-locate-config-file-home (filename _checker)
   "Locate a configuration FILENAME in the home directory.
-
 Return the absolute path, if FILENAME exists in the user's home
 directory, or nil otherwise."
-  (let* ((home (or (and (buffer-file-name) (file-remote-p (buffer-file-name)))
+  (let* ((home (or (and (buffer-file-name)
+                        (file-remote-p (buffer-file-name)))
                    "~"))
          (path (expand-file-name filename home)))
     (when (file-exists-p path)
-      path)))
+      (if (file-remote-p path)
+          (file-remote-p path 'localname)
+        path))))
 
 (seq-do (apply-partially #'custom-add-frequent-value
                          'flycheck-locate-config-file-functions)
